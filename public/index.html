@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Adda — Rung Online</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/lobby.css">
+</head>
+<body>
+  <div class="lobby-container">
+    <header class="lobby-header">
+      <h1>♠ Project Adda</h1>
+      <p>Play Rung (Court Piece) online with friends — no login required</p>
+    </header>
+
+    <div class="lobby-panels">
+      <!-- Create Room -->
+      <div class="panel">
+        <h2>Create a Room</h2>
+        <div class="form-group">
+          <label for="create-name">Your Name</label>
+          <input type="text" id="create-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
+        </div>
+        <button class="btn-primary" id="create-btn">Create Room</button>
+        <div class="error-msg" id="create-error"></div>
+      </div>
+
+      <!-- Join Room -->
+      <div class="panel">
+        <h2>Join a Room</h2>
+        <div class="form-group">
+          <label for="join-name">Your Name</label>
+          <input type="text" id="join-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="join-code">Room Code</label>
+          <input type="text" id="join-code" placeholder="6-character code" maxlength="6" autocomplete="off" style="text-transform:uppercase; letter-spacing:4px; font-size:18px; font-weight:700;">
+        </div>
+        <button class="btn-primary" id="join-btn">Join Room</button>
+        <div class="error-msg" id="join-error"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/lobby.js" type="module"></script>
+</body>
+</html>

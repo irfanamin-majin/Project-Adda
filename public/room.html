@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waiting Room — Project Adda</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/lobby.css">
+</head>
+<body>
+  <div class="room-container">
+    <header class="room-header">
+      <h1>Waiting Room</h1>
+      <p style="color:var(--text-muted);font-size:14px;margin-top:6px;">Share the code below with 3 friends</p>
+    </header>
+
+    <div class="room-code-display">
+      <div class="label">Room Code</div>
+      <div class="code" id="room-code">------</div>
+      <button class="btn-secondary copy-btn" id="copy-btn">Copy Code</button>
+    </div>
+
+    <div class="team-labels">
+      <span class="team-a">Team A: Seats 1 &amp; 3</span>
+      <span class="team-b">Team B: Seats 2 &amp; 4</span>
+    </div>
+
+    <div class="seats-grid" id="seats-grid">
+      <div class="seat" id="seat-0"><div class="seat-number">1</div><div class="seat-name">Waiting...</div></div>
+      <div class="seat" id="seat-1"><div class="seat-number">2</div><div class="seat-name">Waiting...</div></div>
+      <div class="seat" id="seat-2"><div class="seat-number">3</div><div class="seat-name">Waiting...</div></div>
+      <div class="seat" id="seat-3"><div class="seat-number">4</div><div class="seat-name">Waiting...</div></div>
+    </div>
+
+    <div class="waiting-note" id="waiting-note">Waiting for players...</div>
+
+    <button class="btn-primary" id="start-btn" style="width:100%;display:none;" disabled>
+      Start Game
+    </button>
+
+    <div class="error-msg" id="room-error"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/room.js" type="module"></script>
+</body>
+</html>

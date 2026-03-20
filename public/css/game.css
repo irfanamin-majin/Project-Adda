@@ -1,0 +1,320 @@
+/* ── Game layout ─────────────────────────────────────────────────────────── */
+.game-layout {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 8px;
+  gap: 8px;
+}
+
+.game-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.trump-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 18px;
+}
+.trump-indicator .label { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.trump-suit-hearts, .trump-suit-diamonds { color: var(--card-red); }
+.trump-suit-spades, .trump-suit-clubs { color: var(--text); }
+
+.score-display {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+}
+.score-team { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.score-team .team-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+.score-team .score-value { font-size: 20px; font-weight: 900; }
+.score-team-a .score-value { color: #42a5f5; }
+.score-team-b .score-value { color: #ef5350; }
+
+.tricks-display {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.tricks-display span { font-weight: 700; color: var(--text); }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.game-table {
+  background: radial-gradient(ellipse at center, #2d5a2d 0%, #1a3a1a 70%);
+  border: 3px solid #3a6a3a;
+  border-radius: 16px;
+  position: relative;
+  display: grid;
+  grid-template-areas:
+    ". top ."
+    "left center right"
+    ". bottom .";
+  grid-template-columns: 160px 1fr 160px;
+  grid-template-rows: 120px 1fr 120px;
+  overflow: hidden;
+}
+
+/* ── Player seats ─────────────────────────────────────────────────────────── */
+.player-seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+}
+.player-seat.top    { grid-area: top; }
+.player-seat.bottom { grid-area: bottom; }
+.player-seat.left   { grid-area: left; }
+.player-seat.right  { grid-area: right; }
+
+.player-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(0,0,0,0.5);
+  padding: 2px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.player-name.is-turn { color: var(--gold); border: 1px solid var(--gold); }
+.player-name.you { color: #90ee90; }
+.player-name.disconnected { opacity: 0.4; text-decoration: line-through; }
+
+.opponent-cards {
+  display: flex;
+  gap: 3px;
+}
+.player-seat.left .opponent-cards,
+.player-seat.right .opponent-cards {
+  flex-direction: column;
+}
+
+/* ── Trick center ─────────────────────────────────────────────────────────── */
+.trick-center {
+  grid-area: center;
+  display: grid;
+  grid-template-areas:
+    ". top ."
+    "left . right"
+    ". bottom .";
+  grid-template-columns: 1fr 80px 1fr;
+  grid-template-rows: 1fr 100px 1fr;
+  align-items: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.trick-slot { display: flex; align-items: center; justify-content: center; }
+.trick-slot[data-pos="top"]    { grid-area: top; }
+.trick-slot[data-pos="bottom"] { grid-area: bottom; }
+.trick-slot[data-pos="left"]   { grid-area: left; }
+.trick-slot[data-pos="right"]  { grid-area: right; }
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.card {
+  width: 54px;
+  height: 80px;
+  border-radius: 6px;
+  border: 1px solid #bbb;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 3px 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s, box-shadow 0.1s, opacity 0.15s;
+  position: relative;
+  flex-shrink: 0;
+}
+.card .rank { font-size: 13px; font-weight: 700; line-height: 1; }
+.card .rank-bottom { transform: rotate(180deg); align-self: flex-end; }
+.card .center-suit { font-size: 22px; text-align: center; line-height: 1; align-self: center; }
+.card.suit-hearts .rank, .card.suit-hearts .center-suit,
+.card.suit-diamonds .rank, .card.suit-diamonds .center-suit { color: var(--card-red); }
+.card.suit-spades .rank, .card.suit-spades .center-suit,
+.card.suit-clubs .rank, .card.suit-clubs .center-suit { color: var(--card-black); }
+
+.card:hover:not(.dimmed):not(.face-down) {
+  transform: translateY(-8px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+  z-index: 10;
+}
+.card.selected {
+  transform: translateY(-14px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+  border-color: var(--gold);
+}
+.card.dimmed { opacity: 0.35; cursor: not-allowed; }
+
+.card.face-down {
+  background: repeating-linear-gradient(45deg, #1a4a8a, #1a4a8a 5px, #2255aa 5px, #2255aa 10px);
+  border-color: #1a4a8a;
+  cursor: default;
+  width: 30px;
+  height: 45px;
+}
+
+/* ── Player hand ─────────────────────────────────────────────────────────── */
+.hand-area {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 110px;
+  gap: 0;
+  overflow: hidden;
+}
+
+.hand-cards {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  position: relative;
+  height: 90px;
+}
+
+.hand-cards .card {
+  margin-left: -18px;
+  transition: transform 0.1s, margin-left 0.1s;
+}
+.hand-cards .card:first-child { margin-left: 0; }
+.hand-cards .card:hover:not(.dimmed) { margin-left: -10px; }
+
+/* ── Suit picker modal ───────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  min-width: 300px;
+  box-shadow: var(--shadow);
+}
+.modal h2 { color: var(--gold); margin-bottom: 8px; }
+.modal p  { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+
+.suit-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.suit-btn {
+  padding: 16px;
+  font-size: 28px;
+  border-radius: 12px;
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.suit-btn:hover { background: var(--border); transform: scale(1.05); }
+.suit-btn.hearts, .suit-btn.diamonds { color: var(--card-red); }
+.suit-btn:hover.hearts, .suit-btn:hover.diamonds { border-color: var(--card-red); }
+.suit-btn.spades, .suit-btn.clubs { color: var(--card-black); background: #e8e8e8; }
+.suit-btn:hover.spades, .suit-btn:hover.clubs { background: #d0d0d0; border-color: #333; }
+
+/* ── Toast notifications ──────────────────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 200;
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: 14px;
+  max-width: 320px;
+  animation: slideIn 0.2s ease;
+  box-shadow: var(--shadow);
+}
+.toast.error { border-color: var(--danger); color: var(--danger); }
+.toast.info  { border-color: var(--accent); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ── Result modal ────────────────────────────────────────────────────────── */
+.result-modal .winner-banner {
+  font-size: 1.6rem;
+  font-weight: 900;
+  margin-bottom: 12px;
+}
+.result-modal .trick-count {
+  font-size: 2rem;
+  margin: 12px 0;
+  color: var(--gold);
+}
+.result-modal .court-badge {
+  background: var(--gold);
+  color: var(--bg);
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 14px;
+  display: inline-block;
+  margin-bottom: 12px;
+}
+
+/* ── Last trick display ──────────────────────────────────────────────────── */
+.last-trick-area {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 8px;
+  padding: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Phase overlay ───────────────────────────────────────────────────────── */
+.phase-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.75);
+  color: var(--gold);
+  padding: 4px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+
+.empty-seat .player-name { color: var(--text-muted); opacity: 0.4; }

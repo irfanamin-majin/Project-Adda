@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rung — Project Adda</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/game.css">
+</head>
+<body>
+  <div class="game-layout">
+
+    <!-- Top bar: trump + scores -->
+    <div class="game-topbar">
+      <div class="trump-indicator" id="trump-indicator">
+        <span class="label">TRUMP</span>
+        <span id="trump-value">—</span>
+      </div>
+      <div class="tricks-display">
+        <div>Us: <span id="tricks-us">0</span></div>
+        <div>Them: <span id="tricks-them">0</span></div>
+      </div>
+      <div class="score-display">
+        <div class="score-team score-team-a">
+          <span class="team-label">Team A</span>
+          <span class="score-value" id="score-a">0</span>
+        </div>
+        <div class="score-team score-team-b">
+          <span class="team-label">Team B</span>
+          <span class="score-value" id="score-b">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main table -->
+    <div class="game-table" id="game-table">
+
+      <!-- Top player (partner) -->
+      <div class="player-seat top" id="seat-top">
+        <div class="player-name" id="name-top">Partner</div>
+        <div class="opponent-cards" id="cards-top"></div>
+      </div>
+
+      <!-- Left player (opponent) -->
+      <div class="player-seat left" id="seat-left">
+        <div class="player-name" id="name-left">Opponent</div>
+        <div class="opponent-cards" id="cards-left"></div>
+      </div>
+
+      <!-- Center trick area -->
+      <div class="trick-center" id="trick-center">
+        <div class="trick-slot" data-pos="top"    id="trick-top"></div>
+        <div class="trick-slot" data-pos="left"   id="trick-left"></div>
+        <div class="trick-slot" data-pos="right"  id="trick-right"></div>
+        <div class="trick-slot" data-pos="bottom" id="trick-bottom"></div>
+      </div>
+
+      <!-- Right player (opponent) -->
+      <div class="player-seat right" id="seat-right">
+        <div class="player-name" id="name-right">Opponent</div>
+        <div class="opponent-cards" id="cards-right"></div>
+      </div>
+
+      <!-- Phase banner -->
+      <div class="phase-banner" id="phase-banner" style="display:none;"></div>
+
+    </div>
+
+    <!-- Player's own hand -->
+    <div class="hand-area" id="hand-area">
+      <div class="hand-cards" id="hand-cards"></div>
+    </div>
+
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Modals rendered here by JS -->
+  <div id="modal-root"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/game.js" type="module"></script>
+</body>
+</html>

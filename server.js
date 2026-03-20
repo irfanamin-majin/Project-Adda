@@ -1,0 +1,272 @@
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+
+const GameRoom = require('./game/GameRoom');
+const { SOCKET_EVENTS, PHASES } = require('./game/constants');
+
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: '*' }
+});
+
+const PORT = process.env.PORT || 3000;
+
+// ── Room registry ────────────────────────────────────────────────────────────
+const rooms = new Map();          // roomCode -> GameRoom
+const socketRooms = new Map();    // socketId -> roomCode
+
+// ── HTTP routes ──────────────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'public', 'room.html')));
+app.get('/game', (req, res) => res.sendFile(path.join(__dirname, 'public', 'game.html')));
+
+app.get('/api/room/:code/exists', (req, res) => {
+  res.json({ exists: rooms.has(req.params.code.toUpperCase()) });
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code;
+  do {
+    code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  } while (rooms.has(code));
+  return code;
+}
+
+function getRoomForSocket(socketId) {
+  const code = socketRooms.get(socketId);
+  return code ? rooms.get(code) : null;
+}
+
+// ── Socket.io handlers ───────────────────────────────────────────────────────
+io.on('connection', (socket) => {
+
+  // ── room:create ────────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.ROOM_CREATE, ({ name }) => {
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Name is required' });
+    }
+    const playerName = name.trim().slice(0, 20);
+    const roomCode = generateRoomCode();
+    const room = new GameRoom(roomCode);
+
+    const result = room.addPlayer(socket.id, playerName);
+    if (!result.success) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: result.error });
+    }
+
+    rooms.set(roomCode, room);
+    socketRooms.set(socket.id, roomCode);
+    socket.join(roomCode);
+
+    socket.emit(SOCKET_EVENTS.ROOM_CREATED, {
+      roomCode,
+      seatIndex: result.seatIndex,
+      players: room.getPlayerList()
+    });
+  });
+
+  // ── room:join ──────────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.ROOM_JOIN, ({ name, roomCode }) => {
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Name is required' });
+    }
+    const code = (roomCode || '').toUpperCase().trim();
+    const room = rooms.get(code);
+
+    if (!room) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Room not found' });
+    }
+    if (room.phase !== 'LOBBY') {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Game already in progress' });
+    }
+
+    const playerName = name.trim().slice(0, 20);
+    const result = room.addPlayer(socket.id, playerName);
+    if (!result.success) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: result.error });
+    }
+
+    socketRooms.set(socket.id, code);
+    socket.join(code);
+
+    socket.emit(SOCKET_EVENTS.ROOM_JOINED, {
+      roomCode: code,
+      seatIndex: result.seatIndex,
+      players: room.getPlayerList()
+    });
+
+    socket.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, {
+      players: room.getPlayerList()
+    });
+  });
+
+  // ── room:leave ─────────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.ROOM_LEAVE, () => {
+    handleLeave(socket);
+  });
+
+  // ── game:start ─────────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.GAME_START, () => {
+    const room = getRoomForSocket(socket.id);
+    if (!room) return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Not in a room' });
+    if (!room.isSeatZero(socket.id)) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Only the room creator can start the game' });
+    }
+    if (!room.canStart()) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Need 4 players to start' });
+    }
+
+    room.startGame();
+
+    io.to(room.roomCode).emit(SOCKET_EVENTS.GAME_STARTED, {
+      dealerSeatIndex: room.game.dealerSeatIndex
+    });
+
+    room.broadcastState(io);
+
+    // Notify trump caller to pick trump
+    const callerSeat = room.game.trumpCallerSeatIndex;
+    const callerSocketId = room.seatMap[callerSeat];
+    const callerName = room.players.get(callerSocketId)?.name;
+    io.to(room.roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, {
+      callerSeatIndex: callerSeat,
+      callerName
+    });
+  });
+
+  // ── game:trump_call ────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.GAME_TRUMP_CALL, ({ suit }) => {
+    const room = getRoomForSocket(socket.id);
+    if (!room) return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Not in a room' });
+
+    const validSuits = ['spades', 'hearts', 'diamonds', 'clubs'];
+    if (!validSuits.includes(suit)) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Invalid suit' });
+    }
+
+    const result = room.handleCallTrump(socket.id, suit);
+    if (!result.success) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
+    }
+
+    room.broadcastState(io);
+  });
+
+  // ── game:play_card ─────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.GAME_PLAY_CARD, ({ cardId }) => {
+    const room = getRoomForSocket(socket.id);
+    if (!room) return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Not in a room' });
+    if (typeof cardId !== 'string') {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Invalid card' });
+    }
+
+    const result = room.handlePlayCard(socket.id, cardId);
+    if (!result.success) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
+    }
+
+    room.broadcastState(io);
+
+    // If hand is over, auto-start next hand after a brief delay
+    if (room.game.phase === PHASES.HAND_OVER || room.game.phase === PHASES.GAME_OVER) {
+      // Clients handle the UI — they'll request next hand via game:next_hand
+    }
+  });
+
+  // ── game:next_hand ─────────────────────────────────────────────────────────
+  socket.on('game:next_hand', () => {
+    const room = getRoomForSocket(socket.id);
+    if (!room) return;
+    if (!room.isSeatZero(socket.id)) return; // Only seat 0 triggers next hand
+
+    const result = room.startNextHand();
+    if (!result.success) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
+    }
+
+    room.broadcastState(io);
+
+    const callerSeat = room.game.trumpCallerSeatIndex;
+    const callerSocketId = room.seatMap[callerSeat];
+    const callerName = room.players.get(callerSocketId)?.name;
+    io.to(room.roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, {
+      callerSeatIndex: callerSeat,
+      callerName
+    });
+  });
+
+  // ── game:request_state ─────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.GAME_REQUEST_STATE, ({ roomCode, name, seatIndex }) => {
+    const code = (roomCode || '').toUpperCase().trim();
+    const room = rooms.get(code);
+    if (!room) return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Room not found' });
+
+    // Try reconnection if game is running
+    if (room.phase === 'PLAYING') {
+      const reconnectedSeat = room.reconnectPlayer(socket.id, name);
+      if (reconnectedSeat !== null) {
+        socketRooms.set(socket.id, code);
+        socket.join(code);
+        room.sendStateTo(io, socket.id);
+        return;
+      }
+    }
+
+    // Lobby reconnect
+    socketRooms.set(socket.id, code);
+    socket.join(code);
+    if (room.game) {
+      room.sendStateTo(io, socket.id);
+    } else {
+      socket.emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, { players: room.getPlayerList() });
+    }
+  });
+
+  // ── disconnect ─────────────────────────────────────────────────────────────
+  socket.on('disconnect', () => {
+    handleLeave(socket);
+  });
+});
+
+function handleLeave(socket) {
+  const code = socketRooms.get(socket.id);
+  if (!code) return;
+
+  const room = rooms.get(code);
+  if (room) {
+    const player = room.players.get(socket.id);
+    const name = player?.name;
+    const seatIndex = player?.seatIndex;
+
+    room.removePlayer(socket.id);
+
+    if (room.isEmpty()) {
+      rooms.delete(code);
+    } else {
+      io.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_LEFT, { seatIndex, name });
+    }
+  }
+  socketRooms.delete(socket.id);
+}
+
+// ── Periodic cleanup ─────────────────────────────────────────────────────────
+setInterval(() => {
+  for (const [code, room] of rooms) {
+    if (room.isExpired()) {
+      rooms.delete(code);
+    }
+  }
+}, 30 * 60 * 1000);
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+httpServer.listen(PORT, () => {
+  console.log(`Rung server listening on http://localhost:${PORT}`);
+});
