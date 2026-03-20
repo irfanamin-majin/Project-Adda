@@ -1,12 +1,12 @@
 const RungGame = require('./RungGame');
 const { SOCKET_EVENTS, PHASES } = require('./constants');
 
-const ROOM_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const ROOM_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 class GameRoom {
   constructor(roomCode) {
     this.roomCode = roomCode;
-    this.players = new Map();       // socketId -> { socketId, name, seatIndex }
+    this.players = new Map();       // socketId -> { socketId, name, seatIndex, disconnectedAt }
     this.seatMap = [null, null, null, null]; // seatIndex -> socketId
     this.game = null;
     this.createdAt = Date.now();
@@ -21,7 +21,7 @@ class GameRoom {
       return { success: false, error: 'Room is full' };
     }
 
-    const player = { socketId, name, seatIndex };
+    const player = { socketId, name, seatIndex, disconnectedAt: null };
     this.players.set(socketId, player);
     this.seatMap[seatIndex] = socketId;
     return { success: true, seatIndex };
@@ -35,11 +35,23 @@ class GameRoom {
     this.players.delete(socketId);
   }
 
+  /**
+   * Called on disconnect during PLAYING phase.
+   * Marks the player as disconnected without releasing the seat.
+   * The seat stays reserved for reconnection via reconnectPlayer().
+   */
+  markDisconnected(socketId) {
+    const player = this.players.get(socketId);
+    if (player) player.disconnectedAt = Date.now();
+    // seatMap[i] intentionally kept pointing to old (dead) socketId
+  }
+
   getPlayerList() {
     return this.seatMap.map((socketId, seatIndex) => {
       if (!socketId) return { seatIndex, name: null, connected: false };
       const p = this.players.get(socketId);
-      return { seatIndex, name: p ? p.name : null, connected: !!p };
+      if (!p) return { seatIndex, name: null, connected: false };
+      return { seatIndex, name: p.name, connected: !p.disconnectedAt };
     });
   }
 
@@ -54,7 +66,7 @@ class GameRoom {
   // ── Game Control ─────────────────────────────────────────────────────────────
 
   startGame() {
-    const playerSeats = this.seatMap.map((socketId, i) => {
+    const playerSeats = this.seatMap.map((socketId) => {
       const p = this.players.get(socketId);
       return { id: socketId, name: p.name };
     });
@@ -85,9 +97,9 @@ class GameRoom {
   handlePlayCard(socketId, cardId) {
     if (!this.game) return { success: false, error: 'Game not started' };
 
-    // Security: verify socket is the current player
+    // Security: verify socket is the current player (also guards disconnected players)
     const player = this.players.get(socketId);
-    if (!player) return { success: false, error: 'Player not found' };
+    if (!player || player.disconnectedAt) return { success: false, error: 'Player not found' };
 
     const expectedSeat = this.game.currentPlayerSeatIndex;
     if (player.seatIndex !== expectedSeat) {
@@ -116,7 +128,7 @@ class GameRoom {
     const publicState = this.game.getPublicState();
     io.to(this.roomCode).emit(SOCKET_EVENTS.GAME_STATE, publicState);
 
-    // Send each player their private hand
+    // Send each player their private hand (disconnected players get dropped by Socket.io)
     for (const [socketId, player] of this.players) {
       const hand = this.game.getPlayerHand(socketId);
       io.to(socketId).emit(SOCKET_EVENTS.GAME_HAND, { cards: hand });
@@ -135,30 +147,29 @@ class GameRoom {
   // ── Reconnection ─────────────────────────────────────────────────────────────
 
   /**
-   * Attempt to re-associate a new socketId with an existing player by name.
+   * Attempt to re-associate a new socketId with a disconnected player by name.
    * Returns the seatIndex if successful, or null.
+   *
+   * Scans the players map (not seatMap) because markDisconnected() keeps the
+   * old dead socketId in seatMap — scanning seatMap would only find the old ID.
    */
   reconnectPlayer(newSocketId, name) {
-    // Find a seat with the same name but no live socket
-    for (let i = 0; i < this.seatMap.length; i++) {
-      const existingSocketId = this.seatMap[i];
-      if (!existingSocketId) {
-        // Seat is empty — can't reconnect to it
-        continue;
-      }
-      const existing = this.players.get(existingSocketId);
-      if (existing && existing.name === name) {
-        // Re-associate
-        this.players.delete(existingSocketId);
-        this.seatMap[i] = newSocketId;
-        const player = { socketId: newSocketId, name, seatIndex: i };
-        this.players.set(newSocketId, player);
+    for (const [oldSocketId, player] of this.players) {
+      if (player.name === name && player.disconnectedAt !== null) {
+        // Re-associate: swap socketId, clear disconnectedAt, update seatMap
+        this.players.delete(oldSocketId);
+        this.seatMap[player.seatIndex] = newSocketId;
+        this.players.set(newSocketId, {
+          ...player,
+          socketId: newSocketId,
+          disconnectedAt: null
+        });
 
-        // Update game's internal player ID references if game is running
+        // Update game's internal player ID references
         if (this.game) {
-          this.game.reconnectPlayer(existingSocketId, newSocketId);
+          this.game.reconnectPlayer(oldSocketId, newSocketId);
         }
-        return i;
+        return player.seatIndex;
       }
     }
     return null;
@@ -168,6 +179,20 @@ class GameRoom {
 
   isEmpty() {
     return this.players.size === 0;
+  }
+
+  /**
+   * Returns true when every player has been disconnected for at least windowMs.
+   * Used by the server cleanup interval to GC ghost rooms.
+   */
+  isAbandoned(windowMs = 2 * 60 * 1000) {
+    if (this.players.size === 0) return true;
+    const now = Date.now();
+    for (const player of this.players.values()) {
+      if (!player.disconnectedAt) return false;           // still connected
+      if (now - player.disconnectedAt < windowMs) return false; // too recent
+    }
+    return true;
   }
 
   isExpired() {

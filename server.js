@@ -19,6 +19,19 @@ const PORT = process.env.PORT || 3000;
 const rooms = new Map();          // roomCode -> GameRoom
 const socketRooms = new Map();    // socketId -> roomCode
 
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+const rateLimits = new Map();     // socketId -> { [event]: timestamp[] }
+
+function checkRate(socketId, event, maxCalls, windowMs) {
+  if (!rateLimits.has(socketId)) rateLimits.set(socketId, {});
+  const bucket = rateLimits.get(socketId);
+  const now = Date.now();
+  bucket[event] = (bucket[event] || []).filter(t => now - t < windowMs);
+  if (bucket[event].length >= maxCalls) return false;
+  bucket[event].push(now);
+  return true;
+}
+
 // ── HTTP routes ──────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -50,6 +63,9 @@ io.on('connection', (socket) => {
 
   // ── room:create ────────────────────────────────────────────────────────────
   socket.on(SOCKET_EVENTS.ROOM_CREATE, ({ name }) => {
+    if (!checkRate(socket.id, 'room_create', 5, 10000)) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Too many requests' });
+    }
     if (!name || typeof name !== 'string' || !name.trim()) {
       return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Name is required' });
     }
@@ -75,6 +91,9 @@ io.on('connection', (socket) => {
 
   // ── room:join ──────────────────────────────────────────────────────────────
   socket.on(SOCKET_EVENTS.ROOM_JOIN, ({ name, roomCode }) => {
+    if (!checkRate(socket.id, 'room_join', 5, 10000)) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Too many requests' });
+    }
     if (!name || typeof name !== 'string' || !name.trim()) {
       return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Name is required' });
     }
@@ -144,6 +163,9 @@ io.on('connection', (socket) => {
 
   // ── game:trump_call ────────────────────────────────────────────────────────
   socket.on(SOCKET_EVENTS.GAME_TRUMP_CALL, ({ suit }) => {
+    if (!checkRate(socket.id, 'trump_call', 3, 5000)) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Too many requests' });
+    }
     const room = getRoomForSocket(socket.id);
     if (!room) return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Not in a room' });
 
@@ -162,6 +184,9 @@ io.on('connection', (socket) => {
 
   // ── game:play_card ─────────────────────────────────────────────────────────
   socket.on(SOCKET_EVENTS.GAME_PLAY_CARD, ({ cardId }) => {
+    if (!checkRate(socket.id, 'play_card', 5, 2000)) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Too many requests' });
+    }
     const room = getRoomForSocket(socket.id);
     if (!room) return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Not in a room' });
     if (typeof cardId !== 'string') {
@@ -182,10 +207,15 @@ io.on('connection', (socket) => {
   });
 
   // ── game:next_hand ─────────────────────────────────────────────────────────
+  // Any connected player can trigger — server verifies phase so this can't be
+  // abused, and it unblocks the room if seat 0 disconnected after a hand ends.
   socket.on('game:next_hand', () => {
     const room = getRoomForSocket(socket.id);
     if (!room) return;
-    if (!room.isSeatZero(socket.id)) return; // Only seat 0 triggers next hand
+
+    if (!room.game || room.game.phase !== PHASES.HAND_OVER) {
+      return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: 'Not ready for next hand' });
+    }
 
     const result = room.startNextHand();
     if (!result.success) {
@@ -205,6 +235,9 @@ io.on('connection', (socket) => {
 
   // ── game:request_state ─────────────────────────────────────────────────────
   socket.on(SOCKET_EVENTS.GAME_REQUEST_STATE, ({ roomCode, name, seatIndex }) => {
+    if (!checkRate(socket.id, 'request_state', 5, 60000)) {
+      return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Too many requests' });
+    }
     const code = (roomCode || '').toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Room not found' });
@@ -246,25 +279,35 @@ function handleLeave(socket) {
     const name = player?.name;
     const seatIndex = player?.seatIndex;
 
-    room.removePlayer(socket.id);
-
-    if (room.isEmpty()) {
-      rooms.delete(code);
+    if (room.phase === 'PLAYING') {
+      // Keep seat reserved — player may reconnect within the abandonment window
+      room.markDisconnected(socket.id);
     } else {
+      room.removePlayer(socket.id);
+      if (room.isEmpty()) {
+        rooms.delete(code);
+      }
+    }
+
+    // Notify remaining players in both cases
+    if (name !== undefined) {
       io.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_LEFT, { seatIndex, name });
     }
   }
   socketRooms.delete(socket.id);
+  rateLimits.delete(socket.id);
 }
 
 // ── Periodic cleanup ─────────────────────────────────────────────────────────
+// Runs every 2 minutes. Removes rooms that are expired (old + empty lobby) or
+// abandoned (all players disconnected for ≥2 minutes mid-game).
 setInterval(() => {
   for (const [code, room] of rooms) {
-    if (room.isExpired()) {
+    if (room.isAbandoned(2 * 60 * 1000) || room.isExpired()) {
       rooms.delete(code);
     }
   }
-}, 30 * 60 * 1000);
+}, 2 * 60 * 1000);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
