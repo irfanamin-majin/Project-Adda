@@ -16,8 +16,9 @@ const io = new Server(httpServer, {
 const PORT = process.env.PORT || 3000;
 
 // ── Room registry ────────────────────────────────────────────────────────────
-const rooms = new Map();          // roomCode -> GameRoom
-const socketRooms = new Map();    // socketId -> roomCode
+const rooms = new Map();            // roomCode -> GameRoom
+const socketRooms = new Map();      // socketId -> roomCode
+const autoStartTimers = new Map();  // roomCode -> setTimeout handle
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const rateLimits = new Map();     // socketId -> { [event]: timestamp[] }
@@ -200,9 +201,23 @@ io.on('connection', (socket) => {
 
     room.broadcastState(io);
 
-    // If hand is over, auto-start next hand after a brief delay
-    if (room.game.phase === PHASES.HAND_OVER || room.game.phase === PHASES.GAME_OVER) {
-      // Clients handle the UI — they'll request next hand via game:next_hand
+    // Auto-advance to next hand after 7 s so players can read the result modal
+    if (room.game.phase === PHASES.HAND_OVER) {
+      clearTimeout(autoStartTimers.get(room.roomCode));
+      const roomCode = room.roomCode;
+      const timer = setTimeout(() => {
+        autoStartTimers.delete(roomCode);
+        const r = rooms.get(roomCode);
+        if (!r || !r.game || r.game.phase !== PHASES.HAND_OVER) return;
+        const nextResult = r.startNextHand();
+        if (nextResult.success) {
+          r.broadcastState(io);
+          const callerSeat = r.game.trumpCallerSeatIndex;
+          const callerName = r.game.playerSeats[callerSeat]?.name;
+          io.to(roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
+        }
+      }, 7000);
+      autoStartTimers.set(roomCode, timer);
     }
   });
 
@@ -238,6 +253,8 @@ io.on('connection', (socket) => {
     const room = getRoomForSocket(socket.id);
     if (!room) return;
     if (!room.isSeatZero(socket.id)) return; // only host can abandon
+    clearTimeout(autoStartTimers.get(room.roomCode));
+    autoStartTimers.delete(room.roomCode);
     io.to(room.roomCode).emit(SOCKET_EVENTS.GAME_ABANDONED);
     rooms.delete(room.roomCode);
   });
@@ -330,6 +347,8 @@ setInterval(() => {
   for (const [code, room] of rooms) {
     const abandonWindow = room.phase === 'PLAYING' ? 2 * 60 * 1000 : 30 * 1000;
     if (room.isAbandoned(abandonWindow) || room.isExpired()) {
+      clearTimeout(autoStartTimers.get(code));
+      autoStartTimers.delete(code);
       rooms.delete(code);
     }
   }

@@ -57,18 +57,14 @@ export function showTrumpPicker(callerName, isMine) {
 }
 
 // ── Hand result ───────────────────────────────────────────────────────────────
-export function showHandResult(lastHandResult, myTeam, isSeatZero) {
+export function showHandResult(lastHandResult, myTeam) {
   if (!lastHandResult) return;
 
-  const { winningTeam, tricks, isCourt, scores, newDealerSeatIndex } = lastHandResult;
+  const { winningTeam, tricks, isCourt, scores } = lastHandResult;
   const youWon = winningTeam === myTeam;
   const winnerText = youWon ? 'Your Team Wins!' : 'Opponents Win!';
   const color = youWon ? '#4caf50' : '#ef5350';
   const courtBadge = isCourt ? '<div class="court-badge">COURT! 🏆</div>' : '';
-
-  const startBtn = isSeatZero
-    ? `<button class="btn-primary" id="next-hand-btn" style="width:100%;margin-top:16px;">Next Hand</button>`
-    : `<p style="color:var(--text-muted);margin-top:12px;font-size:13px;">Waiting for room creator to start next hand...</p>`;
 
   const html = `
     <div class="result-modal">
@@ -77,17 +73,22 @@ export function showHandResult(lastHandResult, myTeam, isSeatZero) {
       <div class="trick-count">${tricks.A} — ${tricks.B}</div>
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">tricks (Team A — Team B)</div>
       <div style="font-size:14px;margin-bottom:4px;">Courts: A <strong>${scores?.A ?? 0}</strong> — B <strong>${scores?.B ?? 0}</strong></div>
-      ${startBtn}
+      <p style="color:var(--text-muted);margin-top:12px;font-size:14px;">
+        Next hand in <strong id="countdown-secs">7</strong>s...
+      </p>
     </div>
   `;
 
-  const root = showModal(html);
-  if (isSeatZero) {
-    root.querySelector('#next-hand-btn').addEventListener('click', () => {
-      SocketClient.emit('game:next_hand', {});
-      closeModal();
-    });
-  }
+  showModal(html);
+
+  let secs = 7;
+  const interval = setInterval(() => {
+    secs--;
+    const el = document.getElementById('countdown-secs');
+    if (!el) { clearInterval(interval); return; }
+    el.textContent = secs;
+    if (secs <= 0) clearInterval(interval);
+  }, 1000);
 }
 
 // ── Game over ─────────────────────────────────────────────────────────────────

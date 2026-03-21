@@ -5,7 +5,7 @@ import { renderTrick }  from './ui/TrickDisplay.js';
 import { renderHand }   from './ui/CardRenderer.js';
 import {
   showToast, showError,
-  showTrumpPicker, showHandResult, showGameOver
+  showTrumpPicker, showHandResult, showGameOver, closeModal
 } from './ui/Notifications.js';
 
 // ── Load session ──────────────────────────────────────────────────────────────
@@ -30,7 +30,12 @@ SocketClient.on('connect', () => {
 });
 
 SocketClient.on('game:state', (state) => {
+  const prevPhase = ClientState.publicState?.phase;
   ClientState.publicState = state;
+  // Auto-close the hand result modal when the next hand begins
+  if (prevPhase === 'HAND_OVER' && state.phase !== 'HAND_OVER') {
+    closeModal();
+  }
   render(state);
 });
 
@@ -82,11 +87,7 @@ function render(state) {
 
   // Handle phase transitions
   if (state.phase === 'HAND_OVER' && state.lastHandResult) {
-    showHandResult(
-      state.lastHandResult,
-      ClientState.myTeam,
-      ClientState.mySeatIndex === 0
-    );
+    showHandResult(state.lastHandResult, ClientState.myTeam);
   }
 
   if (state.phase === 'GAME_OVER' && state.lastHandResult) {

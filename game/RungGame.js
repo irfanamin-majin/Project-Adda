@@ -218,10 +218,9 @@ class RungGame {
       return;
     }
 
-    // Check if all 13 tricks played
-    if (this.totalTricksPlayed === 13) {
-      const winner = this.tricksTaken.A >= 7 ? 'A' : 'B';
-      this._resolveHand(winner, false);
+    // Math elimination — once a team hits 7 tricks the hand is decided
+    if (this.tricksTaken[winningTeam] === 7) {
+      this._resolveHand(winningTeam, false);
       return;
     }
 
