@@ -13,7 +13,7 @@ class RungGame {
     this.phase = PHASES.WAITING;
     this.deck = [];
     this.hands = {};           // { [playerId]: Card[] }
-    this.dealerSeatIndex = 0;
+    this.dealerSeatIndex = Math.floor(Math.random() * 4);
     this.trumpCallerSeatIndex = null;
     this.trumpSuit = null;
     this.currentTrick = { cards: [], ledSuit: null, leaderSeatIndex: null };
