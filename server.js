@@ -253,13 +253,21 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Lobby reconnect
+    // Lobby reconnect — re-register the player (page navigation killed the old socket)
+    const reconnectedSeat = room.reconnectPlayer(socket.id, name);
+    if (reconnectedSeat === null) {
+      // Player wasn't previously in the room — try adding as new
+      const result = room.addPlayer(socket.id, name);
+      if (!result.success) {
+        return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: result.error });
+      }
+    }
     socketRooms.set(socket.id, code);
     socket.join(code);
     if (room.game) {
       room.sendStateTo(io, socket.id);
     } else {
-      socket.emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, { players: room.getPlayerList() });
+      io.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, { players: room.getPlayerList() });
     }
   });
 
@@ -279,15 +287,10 @@ function handleLeave(socket) {
     const name = player?.name;
     const seatIndex = player?.seatIndex;
 
-    if (room.phase === 'PLAYING') {
-      // Keep seat reserved — player may reconnect within the abandonment window
-      room.markDisconnected(socket.id);
-    } else {
-      room.removePlayer(socket.id);
-      if (room.isEmpty()) {
-        rooms.delete(code);
-      }
-    }
+    // Mark disconnected for ALL phases (not just PLAYING).
+    // For LOBBY, this gives a 30-second grace period for page-navigation
+    // reconnects instead of instantly deleting the room.
+    room.markDisconnected(socket.id);
 
     // Notify remaining players in both cases
     if (name !== undefined) {
@@ -299,15 +302,17 @@ function handleLeave(socket) {
 }
 
 // ── Periodic cleanup ─────────────────────────────────────────────────────────
-// Runs every 2 minutes. Removes rooms that are expired (old + empty lobby) or
-// abandoned (all players disconnected for ≥2 minutes mid-game).
+// Runs every 10 seconds. LOBBY rooms get a 30-second grace period (for page
+// navigation reconnects). PLAYING rooms get 2 minutes before being considered
+// abandoned.
 setInterval(() => {
   for (const [code, room] of rooms) {
-    if (room.isAbandoned(2 * 60 * 1000) || room.isExpired()) {
+    const abandonWindow = room.phase === 'PLAYING' ? 2 * 60 * 1000 : 30 * 1000;
+    if (room.isAbandoned(abandonWindow) || room.isExpired()) {
       rooms.delete(code);
     }
   }
-}, 2 * 60 * 1000);
+}, 10 * 1000);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
