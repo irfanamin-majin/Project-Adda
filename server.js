@@ -233,6 +233,15 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ── game:abandon ───────────────────────────────────────────────────────────
+  socket.on(SOCKET_EVENTS.GAME_ABANDON, () => {
+    const room = getRoomForSocket(socket.id);
+    if (!room) return;
+    if (!room.isSeatZero(socket.id)) return; // only host can abandon
+    io.to(room.roomCode).emit(SOCKET_EVENTS.GAME_ABANDONED);
+    rooms.delete(room.roomCode);
+  });
+
   // ── game:request_state ─────────────────────────────────────────────────────
   socket.on(SOCKET_EVENTS.GAME_REQUEST_STATE, ({ roomCode, name, seatIndex }) => {
     if (!checkRate(socket.id, 'request_state', 5, 60000)) {
@@ -249,6 +258,12 @@ io.on('connection', (socket) => {
         socketRooms.set(socket.id, code);
         socket.join(code);
         room.sendStateTo(io, socket.id);
+        // Re-deliver trump_needed if we reconnected during that phase
+        if (room.game && room.game.phase === PHASES.CALLING_TRUMP) {
+          const callerSeat = room.game.trumpCallerSeatIndex;
+          const callerName = room.game.playerSeats[callerSeat]?.name;
+          socket.emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
+        }
         return;
       }
     }
@@ -266,6 +281,12 @@ io.on('connection', (socket) => {
     socket.join(code);
     if (room.game) {
       room.sendStateTo(io, socket.id);
+      // Re-deliver trump_needed if we reconnected during that phase
+      if (room.game.phase === PHASES.CALLING_TRUMP) {
+        const callerSeat = room.game.trumpCallerSeatIndex;
+        const callerName = room.game.playerSeats[callerSeat]?.name;
+        socket.emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
+      }
     } else {
       io.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, { players: room.getPlayerList() });
     }

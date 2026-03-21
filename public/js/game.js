@@ -44,6 +44,10 @@ SocketClient.on('game:trump_needed', ({ callerSeatIndex, callerName }) => {
   showTrumpPicker(callerName, isMine);
 });
 
+SocketClient.on('game:abandoned', () => {
+  window.location.href = '/';
+});
+
 SocketClient.on('game:error', ({ message }) => {
   showError(message);
 });
@@ -51,6 +55,17 @@ SocketClient.on('game:error', ({ message }) => {
 SocketClient.on('room:error', ({ message }) => {
   showError(message);
 });
+
+// ── Exit button (host only) ───────────────────────────────────────────────────
+if (ClientState.mySeatIndex === 0) {
+  const exitBtn = document.getElementById('exit-btn');
+  exitBtn.style.display = 'inline-block';
+  exitBtn.addEventListener('click', () => {
+    if (confirm('End the game for everyone and return to the main screen?')) {
+      SocketClient.emit('game:abandon');
+    }
+  });
+}
 
 // ── Render functions ──────────────────────────────────────────────────────────
 

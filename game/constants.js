@@ -47,7 +47,12 @@ const SOCKET_EVENTS = {
   ROOM_PLAYER_LEFT: 'room:player_left',
   GAME_STARTED: 'game:started',
   GAME_STATE: 'game:state',
-  GAME_TRUMP_NEEDED: 'game:trump_needed'
+  GAME_TRUMP_NEEDED: 'game:trump_needed',
+
+  // Client -> Server (host only)
+  GAME_ABANDON: 'game:abandon',
+  // Server -> Client (broadcast)
+  GAME_ABANDONED: 'game:abandoned'
 };
 
 module.exports = { SUITS, RANKS, SUIT_SYMBOLS, PHASES, TEAMS, SOCKET_EVENTS };
