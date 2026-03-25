@@ -114,7 +114,7 @@ class GameRoom {
 
     try {
       this.game.playCard(socketId, cardId);
-      return { success: true };
+      return { success: true, trickPending: this.game.trickPendingResolution };
     } catch (e) {
       return { success: false, error: e.message };
     }

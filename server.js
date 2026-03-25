@@ -199,25 +199,37 @@ io.on('connection', (socket) => {
       return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
     }
 
+    // Step 1 — broadcast immediately so everyone sees the full 4-card trick (or
+    // the updated trick for cards 1–3).
     room.broadcastState(io);
 
-    // Auto-advance to next hand after 7 s so players can read the result modal
-    if (room.game.phase === PHASES.HAND_OVER) {
-      clearTimeout(autoStartTimers.get(room.roomCode));
+    if (result.trickPending) {
+      // Step 2 — after 2 s let everyone read the trick, then resolve it
       const roomCode = room.roomCode;
-      const timer = setTimeout(() => {
-        autoStartTimers.delete(roomCode);
+      setTimeout(() => {
         const r = rooms.get(roomCode);
-        if (!r || !r.game || r.game.phase !== PHASES.HAND_OVER) return;
-        const nextResult = r.startNextHand();
-        if (nextResult.success) {
-          r.broadcastState(io);
-          const callerSeat = r.game.trumpCallerSeatIndex;
-          const callerName = r.game.playerSeats[callerSeat]?.name;
-          io.to(roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
+        if (!r || !r.game || !r.game.trickPendingResolution) return;
+        r.game.resolvePendingTrick();
+        r.broadcastState(io);
+
+        // Auto-advance to next hand after 7 s so players can read the result modal
+        if (r.game.phase === PHASES.HAND_OVER) {
+          clearTimeout(autoStartTimers.get(roomCode));
+          const handTimer = setTimeout(() => {
+            autoStartTimers.delete(roomCode);
+            const rr = rooms.get(roomCode);
+            if (!rr || !rr.game || rr.game.phase !== PHASES.HAND_OVER) return;
+            const nextResult = rr.startNextHand();
+            if (nextResult.success) {
+              rr.broadcastState(io);
+              const callerSeat = rr.game.trumpCallerSeatIndex;
+              const callerName = rr.game.playerSeats[callerSeat]?.name;
+              io.to(roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
+            }
+          }, 7000);
+          autoStartTimers.set(roomCode, handTimer);
         }
-      }, 7000);
-      autoStartTimers.set(roomCode, timer);
+      }, 2000);
     }
   });
 

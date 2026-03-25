@@ -25,6 +25,7 @@ class RungGame {
     this.lastHandResult = null;
     this.handNumber = 0;
     this.totalTricksPlayed = 0;
+    this.trickPendingResolution = false;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ class RungGame {
     this.hands = {};
     this.tricksTaken = { A: 0, B: 0 };
     this.totalTricksPlayed = 0;
+    this.trickPendingResolution = false;
     this.currentTrick = { cards: [], ledSuit: null, leaderSeatIndex: null };
     this.lastTrick = null;
     this.lastHandResult = null;
@@ -112,7 +114,10 @@ class RungGame {
     this.currentTrick.cards.push({ playerId, card, seatIndex });
 
     if (this.currentTrick.cards.length === 4) {
-      this._resolveTrick();
+      // Don't resolve immediately — caller broadcasts the full 4-card trick first,
+      // then calls resolvePendingTrick() after a short delay.
+      this.trickPendingResolution = true;
+      this.currentPlayerSeatIndex = null; // nobody's turn during the display pause
     } else {
       // Advance to next player counter-clockwise
       this.currentPlayerSeatIndex = (this.currentPlayerSeatIndex + 3) % 4;
@@ -182,6 +187,12 @@ class RungGame {
       delete this.playerIdToSeat[oldId];
       this.playerSeats[seat].id = newId;
     }
+  }
+
+  resolvePendingTrick() {
+    if (!this.trickPendingResolution) return;
+    this.trickPendingResolution = false;
+    this._resolveTrick();
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
