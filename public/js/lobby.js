@@ -1,6 +1,7 @@
 import SocketClient from './socket-client.js';
 
 const createNameEl  = document.getElementById('create-name');
+const createModeEl  = document.getElementById('create-mode');
 const createBtn     = document.getElementById('create-btn');
 const createError   = document.getElementById('create-error');
 const joinNameEl    = document.getElementById('join-name');
@@ -19,13 +20,14 @@ createBtn.addEventListener('click', () => {
   if (!name) { createError.textContent = 'Please enter your name'; return; }
   createError.textContent = '';
   createBtn.disabled = true;
-  SocketClient.emit('room:create', { name });
+  SocketClient.emit('room:create', { name, gameMode: createModeEl.value });
 });
 
-SocketClient.on('room:created', ({ roomCode, seatIndex }) => {
+SocketClient.on('room:created', ({ roomCode, seatIndex, gameMode }) => {
   sessionStorage.setItem('playerName', createNameEl.value.trim());
   sessionStorage.setItem('roomCode', roomCode);
   sessionStorage.setItem('seatIndex', seatIndex);
+  sessionStorage.setItem('gameMode', gameMode || 'CLASSIC');
   window.location.href = `/room?code=${roomCode}`;
 });
 

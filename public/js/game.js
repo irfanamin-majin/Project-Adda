@@ -99,7 +99,7 @@ function render(state) {
   if (!state) return;
 
   renderTable(state, ClientState.mySeatIndex);
-  renderTrick(state.currentTrick, ClientState.mySeatIndex);
+  renderTrick(state.currentTrick, ClientState.mySeatIndex, state.gameMode, state.pendingPileCount);
   renderScoreboard(state);
   renderPhaseBanner(state);
 

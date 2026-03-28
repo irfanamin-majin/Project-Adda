@@ -154,3 +154,21 @@
 }
 .team-a { color: #42a5f5; }
 .team-b { color: #ef5350; }
+
+.game-mode-badge {
+  display: inline-block;
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.game-mode-badge.mode-double-sir {
+  border-color: var(--gold);
+  color: var(--gold);
+}

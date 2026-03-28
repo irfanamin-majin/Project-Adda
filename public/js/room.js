@@ -7,6 +7,19 @@ const mySeat    = parseInt(sessionStorage.getItem('seatIndex') ?? '-1', 10);
 
 document.getElementById('room-code').textContent = roomCode || '??????';
 
+const MODE_LABELS = { CLASSIC: 'Classic', DOUBLE_SIR: 'Double Sir' };
+
+function renderGameMode(mode) {
+  const badge = document.getElementById('game-mode-badge');
+  if (!badge) return;
+  const label = MODE_LABELS[mode] || mode || 'Classic';
+  badge.textContent = label;
+  badge.className = 'game-mode-badge' + (mode === 'DOUBLE_SIR' ? ' mode-double-sir' : '');
+}
+
+// Show mode from sessionStorage immediately (host set it, joiners will update on first event)
+renderGameMode(sessionStorage.getItem('gameMode') || 'CLASSIC');
+
 // Copy button
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(roomCode).then(() => {
@@ -58,8 +71,12 @@ SocketClient.on('connect', () => {
   }
 });
 
-SocketClient.on('room:player_joined', ({ players }) => {
+SocketClient.on('room:player_joined', ({ players, gameMode }) => {
   renderSeats(players);
+  if (gameMode) {
+    sessionStorage.setItem('gameMode', gameMode);
+    renderGameMode(gameMode);
+  }
 });
 
 SocketClient.on('room:joined', ({ players }) => {
