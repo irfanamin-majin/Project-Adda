@@ -52,7 +52,12 @@ export function renderHand(cards, isMyTurn, ledSuit, onPlay) {
   const container = document.getElementById('hand-cards');
   container.innerHTML = '';
 
-  for (const card of cards) {
+  const SUIT_ORDER = { spades: 0, hearts: 1, diamonds: 2, clubs: 3 };
+  const sorted = [...cards].sort((a, b) =>
+    SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || b.rankValue - a.rankValue
+  );
+
+  for (const card of sorted) {
     let dimmed = false;
 
     if (isMyTurn && ledSuit) {
