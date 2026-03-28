@@ -5,13 +5,15 @@ import { createFaceDownEl } from './CardRenderer.js';
  */
 const POSITIONS = ['bottom', 'right', 'top', 'left'];
 
+const CIRCUMFERENCE = 2 * Math.PI * 14; // r=14 SVG circle
+
 /**
  * Renders the 4 player seats relative to mySeatIndex.
  * @param {Object} publicState
  * @param {number} mySeatIndex
  */
 export function renderTable(publicState, mySeatIndex) {
-  const { players, currentPlayerSeatIndex } = publicState;
+  const { players, currentPlayerSeatIndex, turnDeadline } = publicState;
 
   for (let relPos = 0; relPos < 4; relPos++) {
     const absPos = (mySeatIndex + relPos) % 4;
@@ -25,6 +27,12 @@ export function renderTable(publicState, mySeatIndex) {
 
     if (!nameEl) continue;
 
+    // Remove stale timer before re-rendering
+    seatEl?.querySelector('.turn-timer')?.remove();
+
+    // Active-turn seat highlight
+    seatEl?.classList.toggle('active-turn', absPos === currentPlayerSeatIndex);
+
     // Name label
     nameEl.textContent = player.name || `Seat ${absPos + 1}`;
     nameEl.className = 'player-name';
@@ -36,6 +44,27 @@ export function renderTable(publicState, mySeatIndex) {
     if (absPos === publicState.dealerSeatIndex) {
       nameEl.textContent += ' ⬤';
       nameEl.title = 'Dealer';
+    }
+
+    // Countdown ring for the current player
+    if (absPos === currentPlayerSeatIndex && turnDeadline) {
+      const timeLeft = Math.max(0, turnDeadline - Date.now());
+      const secsLeft = Math.ceil(timeLeft / 1000);
+      const offset   = CIRCUMFERENCE * (1 - timeLeft / 20000);
+      const urgent   = secsLeft <= 5;
+
+      const timerEl = document.createElement('div');
+      timerEl.className = 'turn-timer';
+      timerEl.innerHTML = `
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <circle class="timer-ring${urgent ? ' urgent' : ''}" cx="18" cy="18" r="14"
+            stroke-dasharray="${CIRCUMFERENCE.toFixed(2)}"
+            stroke-dashoffset="${offset.toFixed(2)}">
+          </circle>
+        </svg>
+        <span class="timer-text${urgent ? ' urgent' : ''}">${secsLeft}</span>
+      `;
+      nameEl.insertAdjacentElement('afterend', timerEl);
     }
 
     // Face-down cards for opponents

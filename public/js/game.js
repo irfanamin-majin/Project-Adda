@@ -37,6 +37,7 @@ SocketClient.on('game:state', (state) => {
     closeModal();
   }
   render(state);
+  startCountdown(state);
 });
 
 SocketClient.on('game:hand', ({ cards }) => {
@@ -70,6 +71,26 @@ if (ClientState.mySeatIndex === 0) {
       SocketClient.emit('game:abandon');
     }
   });
+}
+
+// ── Turn countdown interval ───────────────────────────────────────────────────
+let countdownInterval = null;
+
+function startCountdown(state) {
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+  if (state.turnDeadline && (state.phase === 'CALLING_TRUMP' || state.phase === 'TRICK_PLAYING')) {
+    countdownInterval = setInterval(() => {
+      const s = ClientState.publicState;
+      if (!s || !s.turnDeadline ||
+          (s.phase !== 'CALLING_TRUMP' && s.phase !== 'TRICK_PLAYING')) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+        return;
+      }
+      renderTable(s, ClientState.mySeatIndex);
+    }, 1000);
+  }
 }
 
 // ── Render functions ──────────────────────────────────────────────────────────
