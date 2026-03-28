@@ -1,11 +1,12 @@
 const RungGame = require('./RungGame');
-const { SOCKET_EVENTS, PHASES } = require('./constants');
+const { SOCKET_EVENTS, PHASES, GAME_MODES } = require('./constants');
 
 const ROOM_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 class GameRoom {
-  constructor(roomCode) {
+  constructor(roomCode, gameMode = GAME_MODES.CLASSIC) {
     this.roomCode = roomCode;
+    this.gameMode = gameMode;
     this.players = new Map();       // socketId -> { socketId, name, seatIndex, disconnectedAt }
     this.seatMap = [null, null, null, null]; // seatIndex -> socketId
     this.game = null;
@@ -72,7 +73,7 @@ class GameRoom {
       return { id: socketId, name: p.name };
     });
 
-    this.game = new RungGame(playerSeats);
+    this.game = new RungGame(playerSeats, this.gameMode);
     this.game.startHand();
     this.phase = 'PLAYING';
   }

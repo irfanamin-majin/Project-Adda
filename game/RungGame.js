@@ -1,14 +1,16 @@
 const { createDeck, shuffle, compareCards } = require('./Deck');
-const { PHASES, TEAMS } = require('./constants');
+const { PHASES, TEAMS, GAME_MODES } = require('./constants');
 
 class RungGame {
-  constructor(playerSeats) {
+  constructor(playerSeats, gameMode = GAME_MODES.CLASSIC) {
     // playerSeats: [{ id, name }, ...] in seat order, length 4
     this.playerSeats = playerSeats; // index = seatIndex
     this.playerIdToSeat = {};
     for (let i = 0; i < playerSeats.length; i++) {
       this.playerIdToSeat[playerSeats[i].id] = i;
     }
+
+    this.gameMode = gameMode;
 
     this.phase = PHASES.WAITING;
     this.deck = [];
@@ -26,6 +28,10 @@ class RungGame {
     this.handNumber = 0;
     this.totalTricksPlayed = 0;
     this.trickPendingResolution = false;
+
+    // Double Sir mode state
+    this.pendingPile = [];          // tricks sitting in the middle uncaptured
+    this.lastTrickWinnerTeam = null; // team that won the most recent trick
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -40,6 +46,8 @@ class RungGame {
     this.currentTrick = { cards: [], ledSuit: null, leaderSeatIndex: null };
     this.lastTrick = null;
     this.lastHandResult = null;
+    this.pendingPile = [];
+    this.lastTrickWinnerTeam = null;
 
     // Trump caller = dealer's right (counter-clockwise = +3 mod 4)
     this.trumpCallerSeatIndex = (this.dealerSeatIndex + 3) % 4;
@@ -172,7 +180,9 @@ class RungGame {
       tricksTaken: { ...this.tricksTaken },
       scores: { ...this.scores },
       handNumber: this.handNumber,
-      lastHandResult: this.lastHandResult
+      lastHandResult: this.lastHandResult,
+      gameMode: this.gameMode,
+      pendingPileCount: this.pendingPile.length
     };
   }
 
@@ -217,13 +227,22 @@ class RungGame {
 
     const winnerSeat = winningEntry.seatIndex;
     const winningTeam = TEAMS.A.includes(winnerSeat) ? 'A' : 'B';
-    this.tricksTaken[winningTeam]++;
 
     // Save last trick for display
     this.lastTrick = {
       cards: cards.map(({ card, seatIndex }) => ({ seatIndex, card })),
       winnerSeatIndex: winnerSeat
     };
+
+    if (this.gameMode === GAME_MODES.DOUBLE_SIR) {
+      this._resolveDoubleSirTrick(winnerSeat, winningTeam, cards);
+    } else {
+      this._resolveClassicTrick(winnerSeat, winningTeam);
+    }
+  }
+
+  _resolveClassicTrick(winnerSeat, winningTeam) {
+    this.tricksTaken[winningTeam]++;
 
     // Check for Court via first-7-tricks win (win all first 7 tricks in a row)
     const courtByFirstSeven =
@@ -238,6 +257,55 @@ class RungGame {
     // Math elimination — once a team hits 7 tricks the hand is decided
     if (this.tricksTaken[winningTeam] === 7) {
       this._resolveHand(winningTeam, false);
+      return;
+    }
+
+    // Continue — winner leads next trick
+    this.currentTrick = { cards: [], ledSuit: null, leaderSeatIndex: null };
+    this.currentPlayerSeatIndex = winnerSeat;
+  }
+
+  _resolveDoubleSirTrick(winnerSeat, winningTeam, cards) {
+    const prevWinnerTeam = this.lastTrickWinnerTeam;
+    this.lastTrickWinnerTeam = winningTeam;
+
+    if (prevWinnerTeam === null) {
+      // First trick of the hand — push to pending pile, no capture yet
+      this.pendingPile.push(cards);
+    } else if (winningTeam === prevWinnerTeam) {
+      // Same team wins consecutively — captures the pending pile + this trick
+      const captured = this.pendingPile.length + 1;
+      this.tricksTaken[winningTeam] += captured;
+      this.pendingPile = [];
+    } else {
+      // Different team wins — previous pile stays; push this trick to a new pile
+      this.pendingPile.push(cards);
+    }
+
+    // Court by first-seven: same as classic (all 7 captured tricks by one team)
+    const courtByFirstSeven =
+      this.totalTricksPlayed === 7 &&
+      this.tricksTaken[winningTeam] === 7;
+
+    if (courtByFirstSeven) {
+      this._resolveHand(winningTeam, true);
+      return;
+    }
+
+    // Math elimination — once a team accumulates 7 captured tricks
+    if (this.tricksTaken[winningTeam] >= 7) {
+      this._resolveHand(winningTeam, false);
+      return;
+    }
+
+    // If all 13 tricks have been played but nobody reached 7 yet,
+    // award the pending pile to the last winning team and end the hand.
+    if (this.totalTricksPlayed === 13 && this.pendingPile.length > 0) {
+      this.tricksTaken[winningTeam] += this.pendingPile.length;
+      this.pendingPile = [];
+      const finalWinner = this.tricksTaken.A >= 7 ? 'A' :
+                          this.tricksTaken.B >= 7 ? 'B' : winningTeam;
+      this._resolveHand(finalWinner, false);
       return;
     }
 

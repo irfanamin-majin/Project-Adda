@@ -5,7 +5,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const GameRoom = require('./game/GameRoom');
-const { SOCKET_EVENTS, PHASES } = require('./game/constants');
+const { SOCKET_EVENTS, PHASES, GAME_MODES } = require('./game/constants');
 
 const app = express();
 const httpServer = createServer(app);
@@ -154,7 +154,7 @@ function handleTrickComplete(roomCode) {
 io.on('connection', (socket) => {
 
   // ── room:create ────────────────────────────────────────────────────────────
-  socket.on(SOCKET_EVENTS.ROOM_CREATE, ({ name }) => {
+  socket.on(SOCKET_EVENTS.ROOM_CREATE, ({ name, gameMode }) => {
     if (!checkRate(socket.id, 'room_create', 5, 10000)) {
       return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Too many requests' });
     }
@@ -162,8 +162,9 @@ io.on('connection', (socket) => {
       return socket.emit(SOCKET_EVENTS.ROOM_ERROR, { message: 'Name is required' });
     }
     const playerName = name.trim().slice(0, 20);
+    const validatedMode = Object.values(GAME_MODES).includes(gameMode) ? gameMode : GAME_MODES.CLASSIC;
     const roomCode = generateRoomCode();
-    const room = new GameRoom(roomCode);
+    const room = new GameRoom(roomCode, validatedMode);
 
     const result = room.addPlayer(socket.id, playerName);
     if (!result.success) {
@@ -177,7 +178,8 @@ io.on('connection', (socket) => {
     socket.emit(SOCKET_EVENTS.ROOM_CREATED, {
       roomCode,
       seatIndex: result.seatIndex,
-      players: room.getPlayerList()
+      players: room.getPlayerList(),
+      gameMode: validatedMode
     });
   });
 
@@ -391,7 +393,7 @@ io.on('connection', (socket) => {
         socket.emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
       }
     } else {
-      io.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, { players: room.getPlayerList() });
+      io.to(code).emit(SOCKET_EVENTS.ROOM_PLAYER_JOINED, { players: room.getPlayerList(), gameMode: room.gameMode });
     }
   });
 
