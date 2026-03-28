@@ -72,8 +72,8 @@ class RungGame {
 
     this.trumpSuit = suit;
 
-    // Deal remaining 8 cards (4 each) counter-clockwise starting from trump caller
-    for (let i = 0; i < 4 * 4; i++) {
+    // Deal remaining 8 cards each (32 total) counter-clockwise starting from trump caller
+    for (let i = 0; i < 8 * 4; i++) {
       const seat = (this.trumpCallerSeatIndex + (i % 4) * 3) % 4;
       const pid = this.playerSeats[seat].id;
       this.hands[pid].push(this.deck.pop());
