@@ -19,6 +19,7 @@ const PORT = process.env.PORT || 3000;
 const rooms = new Map();            // roomCode -> GameRoom
 const socketRooms = new Map();      // socketId -> roomCode
 const autoStartTimers = new Map();  // roomCode -> setTimeout handle
+const turnTimers = new Map();       // roomCode -> setTimeout handle
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const rateLimits = new Map();     // socketId -> { [event]: timestamp[] }
@@ -57,6 +58,96 @@ function generateRoomCode() {
 function getRoomForSocket(socketId) {
   const code = socketRooms.get(socketId);
   return code ? rooms.get(code) : null;
+}
+
+// ── Turn timer helpers ────────────────────────────────────────────────────────
+
+function clearTurnTimer(roomCode) {
+  clearTimeout(turnTimers.get(roomCode));
+  turnTimers.delete(roomCode);
+  const r = rooms.get(roomCode);
+  if (r) r.turnDeadline = null;
+}
+
+function startTurnTimer(roomCode) {
+  clearTurnTimer(roomCode); // always replace any running timer
+  const r = rooms.get(roomCode);
+  if (!r || !r.game) return;
+  if (r.game.trickPendingResolution) return; // 2s display window — no timer
+  if (r.game.phase !== PHASES.CALLING_TRUMP && r.game.phase !== PHASES.TRICK_PLAYING) return;
+
+  r.turnDeadline = Date.now() + 20000;
+
+  const timer = setTimeout(() => {
+    turnTimers.delete(roomCode);
+    const room = rooms.get(roomCode);
+    if (!room || !room.game) return;
+    room.turnDeadline = null;
+
+    if (room.game.phase === PHASES.CALLING_TRUMP) {
+      const suits = ['spades', 'hearts', 'diamonds', 'clubs'];
+      const suit = suits[Math.floor(Math.random() * suits.length)];
+      const callerSeat = room.game.trumpCallerSeatIndex;
+      const callerSocketId = room.seatMap[callerSeat];
+      const result = room.handleCallTrump(callerSocketId, suit);
+      if (result.success) {
+        startTurnTimer(roomCode);
+        room.broadcastState(io);
+      }
+    } else if (room.game.phase === PHASES.TRICK_PLAYING) {
+      const currentSeat = room.game.currentPlayerSeatIndex;
+      const currentSocketId = room.seatMap[currentSeat];
+      const validCards = room.game.getValidCards(currentSocketId);
+      if (!validCards.length) return;
+      const card = validCards[Math.floor(Math.random() * validCards.length)];
+      const result = room.handlePlayCard(currentSocketId, card.id);
+      if (result.success) {
+        if (result.trickPending) {
+          clearTurnTimer(roomCode); // keep timer off during 2s display window
+          room.broadcastState(io);
+          handleTrickComplete(roomCode);
+        } else {
+          startTurnTimer(roomCode);
+          room.broadcastState(io);
+        }
+      }
+    }
+  }, 20000);
+  turnTimers.set(roomCode, timer);
+}
+
+// Resolves the pending trick after 2s, then chains into auto-start or startTurnTimer.
+// Used by both the manual play handler and the auto-play timer.
+function handleTrickComplete(roomCode) {
+  setTimeout(() => {
+    const r = rooms.get(roomCode);
+    if (!r || !r.game || !r.game.trickPendingResolution) return;
+    r.game.resolvePendingTrick();
+
+    if (r.game.phase === PHASES.TRICK_PLAYING) {
+      startTurnTimer(roomCode); // set deadline BEFORE broadcast
+    }
+    r.broadcastState(io);
+
+    if (r.game.phase === PHASES.HAND_OVER) {
+      clearTimeout(autoStartTimers.get(roomCode));
+      const handTimer = setTimeout(() => {
+        autoStartTimers.delete(roomCode);
+        const rr = rooms.get(roomCode);
+        if (!rr || !rr.game || rr.game.phase !== PHASES.HAND_OVER) return;
+        const nextResult = rr.startNextHand();
+        if (nextResult.success) {
+          startTurnTimer(roomCode); // trump caller's 20s
+          rr.broadcastState(io);
+          const callerSeat = rr.game.trumpCallerSeatIndex;
+          const callerName = rr.game.playerSeats[callerSeat]?.name;
+          io.to(roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
+        }
+      }, 7000);
+      autoStartTimers.set(roomCode, handTimer);
+    }
+    // GAME_OVER: no timer — clients show the modal
+  }, 2000);
 }
 
 // ── Socket.io handlers ───────────────────────────────────────────────────────
@@ -150,6 +241,7 @@ io.on('connection', (socket) => {
       dealerSeatIndex: room.game.dealerSeatIndex
     });
 
+    startTurnTimer(room.roomCode);
     room.broadcastState(io);
 
     // Notify trump caller to pick trump
@@ -180,6 +272,7 @@ io.on('connection', (socket) => {
       return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
     }
 
+    startTurnTimer(room.roomCode);
     room.broadcastState(io);
   });
 
@@ -199,37 +292,16 @@ io.on('connection', (socket) => {
       return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
     }
 
-    // Step 1 — broadcast immediately so everyone sees the full 4-card trick (or
-    // the updated trick for cards 1–3).
-    room.broadcastState(io);
-
     if (result.trickPending) {
-      // Step 2 — after 2 s let everyone read the trick, then resolve it
-      const roomCode = room.roomCode;
-      setTimeout(() => {
-        const r = rooms.get(roomCode);
-        if (!r || !r.game || !r.game.trickPendingResolution) return;
-        r.game.resolvePendingTrick();
-        r.broadcastState(io);
-
-        // Auto-advance to next hand after 7 s so players can read the result modal
-        if (r.game.phase === PHASES.HAND_OVER) {
-          clearTimeout(autoStartTimers.get(roomCode));
-          const handTimer = setTimeout(() => {
-            autoStartTimers.delete(roomCode);
-            const rr = rooms.get(roomCode);
-            if (!rr || !rr.game || rr.game.phase !== PHASES.HAND_OVER) return;
-            const nextResult = rr.startNextHand();
-            if (nextResult.success) {
-              rr.broadcastState(io);
-              const callerSeat = rr.game.trumpCallerSeatIndex;
-              const callerName = rr.game.playerSeats[callerSeat]?.name;
-              io.to(roomCode).emit(SOCKET_EVENTS.GAME_TRUMP_NEEDED, { callerSeatIndex: callerSeat, callerName });
-            }
-          }, 7000);
-          autoStartTimers.set(roomCode, handTimer);
-        }
-      }, 2000);
+      // 4th card played — clear timer for the 2s display window, then delegate
+      // to handleTrickComplete which resolves and restarts the timer afterwards.
+      clearTurnTimer(room.roomCode);
+      room.broadcastState(io);
+      handleTrickComplete(room.roomCode);
+    } else {
+      // Cards 1–3 of a trick — start next player's timer before broadcast.
+      startTurnTimer(room.roomCode);
+      room.broadcastState(io);
     }
   });
 
@@ -249,6 +321,7 @@ io.on('connection', (socket) => {
       return socket.emit(SOCKET_EVENTS.GAME_ERROR, { message: result.error });
     }
 
+    startTurnTimer(room.roomCode);
     room.broadcastState(io);
 
     const callerSeat = room.game.trumpCallerSeatIndex;
@@ -265,6 +338,7 @@ io.on('connection', (socket) => {
     const room = getRoomForSocket(socket.id);
     if (!room) return;
     if (!room.isSeatZero(socket.id)) return; // only host can abandon
+    clearTurnTimer(room.roomCode);
     clearTimeout(autoStartTimers.get(room.roomCode));
     autoStartTimers.delete(room.roomCode);
     io.to(room.roomCode).emit(SOCKET_EVENTS.GAME_ABANDONED);
@@ -359,6 +433,7 @@ setInterval(() => {
   for (const [code, room] of rooms) {
     const abandonWindow = room.phase === 'PLAYING' ? 2 * 60 * 1000 : 30 * 1000;
     if (room.isAbandoned(abandonWindow) || room.isExpired()) {
+      clearTurnTimer(code);
       clearTimeout(autoStartTimers.get(code));
       autoStartTimers.delete(code);
       rooms.delete(code);

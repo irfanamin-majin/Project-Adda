@@ -11,6 +11,7 @@ class GameRoom {
     this.game = null;
     this.createdAt = Date.now();
     this.phase = 'LOBBY';
+    this.turnDeadline = null;
   }
 
   // ── Player Management ───────────────────────────────────────────────────────
@@ -125,7 +126,7 @@ class GameRoom {
   broadcastState(io) {
     if (!this.game) return;
 
-    const publicState = this.game.getPublicState();
+    const publicState = { ...this.game.getPublicState(), turnDeadline: this.turnDeadline };
     io.to(this.roomCode).emit(SOCKET_EVENTS.GAME_STATE, publicState);
 
     // Send each player their private hand (disconnected players get dropped by Socket.io)
@@ -137,7 +138,7 @@ class GameRoom {
 
   sendStateTo(io, socketId) {
     if (!this.game) return;
-    const publicState = this.game.getPublicState();
+    const publicState = { ...this.game.getPublicState(), turnDeadline: this.turnDeadline };
     io.to(socketId).emit(SOCKET_EVENTS.GAME_STATE, publicState);
 
     const hand = this.game.getPlayerHand(socketId);

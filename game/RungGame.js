@@ -145,6 +145,12 @@ class RungGame {
     return { valid: true };
   }
 
+  getValidCards(playerId) {
+    const hand = this.hands[playerId];
+    if (!hand) return [];
+    return hand.filter(c => this.isValidPlay(playerId, c.id).valid);
+  }
+
   getPublicState() {
     return {
       phase: this.phase,
