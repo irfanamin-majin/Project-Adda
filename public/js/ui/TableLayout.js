@@ -46,6 +46,15 @@ export function renderTable(publicState, mySeatIndex) {
       nameEl.title = 'Dealer';
     }
 
+    // "Your Turn" badge for the local player
+    seatEl?.querySelector('.your-turn-badge')?.remove();
+    if (relPos === 0 && absPos === currentPlayerSeatIndex) {
+      const badge = document.createElement('div');
+      badge.className = 'your-turn-badge';
+      badge.textContent = 'Your Turn';
+      seatEl.appendChild(badge);
+    }
+
     // Countdown ring for the current player
     if (absPos === currentPlayerSeatIndex && turnDeadline) {
       const timeLeft = Math.max(0, turnDeadline - Date.now());
