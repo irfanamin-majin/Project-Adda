@@ -31,7 +31,8 @@ class RungGame {
 
     // Double Sir mode state
     this.pendingPile = [];          // tricks sitting in the middle uncaptured
-    this.lastTrickWinnerTeam = null; // team that won the most recent trick
+    this.lastTrickWinnerSeat = null;       // seat that won the most recent trick (null after capture or hand start)
+    this.lastTrickWinningCardIsAce = false; // was the winning card of the last trick an Ace?
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -47,7 +48,8 @@ class RungGame {
     this.lastTrick = null;
     this.lastHandResult = null;
     this.pendingPile = [];
-    this.lastTrickWinnerTeam = null;
+    this.lastTrickWinnerSeat = null;
+    this.lastTrickWinningCardIsAce = false;
 
     // Trump caller = dealer's right (counter-clockwise = +3 mod 4)
     this.trumpCallerSeatIndex = (this.dealerSeatIndex + 3) % 4;
@@ -235,7 +237,7 @@ class RungGame {
     };
 
     if (this.gameMode === GAME_MODES.DOUBLE_SIR) {
-      this._resolveDoubleSirTrick(winnerSeat, winningTeam, cards);
+      this._resolveDoubleSirTrick(winnerSeat, winningTeam, cards, winningEntry.card);
     } else {
       this._resolveClassicTrick(winnerSeat, winningTeam);
     }
@@ -265,20 +267,35 @@ class RungGame {
     this.currentPlayerSeatIndex = winnerSeat;
   }
 
-  _resolveDoubleSirTrick(winnerSeat, winningTeam, cards) {
-    const prevWinnerTeam = this.lastTrickWinnerTeam;
-    this.lastTrickWinnerTeam = winningTeam;
+  _resolveDoubleSirTrick(winnerSeat, winningTeam, cards, winningCard) {
+    const prevWinnerSeat = this.lastTrickWinnerSeat;
+    const prevWinningCardWasAce = this.lastTrickWinningCardIsAce;
+    const winningCardIsAce = winningCard.rank === 'A';
 
-    if (prevWinnerTeam === null) {
-      // First trick of the hand — push to pending pile, no capture yet
+    // Update tracking for next trick (may be overwritten below on capture)
+    this.lastTrickWinnerSeat = winnerSeat;
+    this.lastTrickWinningCardIsAce = winningCardIsAce;
+
+    if (prevWinnerSeat === null) {
+      // First trick after hand start or after a capture — goes to pending pile
       this.pendingPile.push(cards);
-    } else if (winningTeam === prevWinnerTeam) {
-      // Same team wins consecutively — captures the pending pile + this trick
-      const captured = this.pendingPile.length + 1;
-      this.tricksTaken[winningTeam] += captured;
-      this.pendingPile = [];
+    } else if (prevWinnerSeat === winnerSeat) {
+      // Same player wins consecutively — check Ace Rule
+      if (prevWinningCardWasAce && winningCardIsAce) {
+        // Cannot capture with two consecutive Aces; pile grows, player must
+        // win again with a non-Ace to capture
+        this.pendingPile.push(cards);
+      } else {
+        // Valid capture — sweep pending pile + this trick
+        const captured = this.pendingPile.length + 1;
+        this.tricksTaken[winningTeam] += captured;
+        this.pendingPile = [];
+        // Reset after capture so next trick starts fresh
+        this.lastTrickWinnerSeat = null;
+        this.lastTrickWinningCardIsAce = false;
+      }
     } else {
-      // Different team wins — previous pile stays; push this trick to a new pile
+      // Different player wins — pile grows
       this.pendingPile.push(cards);
     }
 
