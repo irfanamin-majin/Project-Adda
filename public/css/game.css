@@ -95,6 +95,7 @@
 }
 .player-name.is-turn { color: var(--gold); border: 1px solid var(--gold); animation: turnPulse 1.5s infinite; }
 .player-name.you { color: #90ee90; }
+.player-name.you.is-turn { color: var(--gold); border: 1px solid var(--gold); animation: turnPulse 1.5s infinite; }
 .player-name.disconnected { opacity: 0.4; text-decoration: line-through; }
 
 .opponent-cards {
@@ -363,7 +364,7 @@
 
 .your-turn-badge {
   position: absolute;
-  bottom: -10px;
+  bottom: 2px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--gold);
