@@ -22,7 +22,7 @@ class RungGame {
     this.tricksTaken = { A: 0, B: 0 };
     this.currentPlayerSeatIndex = null;
     this.scores = { A: 0, B: 0 };
-    this.consecutiveWins = { A: 0, B: 0 };
+
     this.lastTrick = null;
     this.lastHandResult = null;
     this.handNumber = 0;
@@ -332,23 +332,12 @@ class RungGame {
   }
 
   _resolveHand(winningTeam, isCourt) {
-    const losingTeam = winningTeam === 'A' ? 'B' : 'A';
     const tricks = { ...this.tricksTaken };
 
-    // Update consecutive wins
-    this.consecutiveWins[winningTeam]++;
-    this.consecutiveWins[losingTeam] = 0;
+    // Every hand win scores 1 point
+    this.scores[winningTeam]++;
 
-    // Check for Court via 7 consecutive hands
-    const courtByConsecutive = !isCourt && this.consecutiveWins[winningTeam] >= 7;
-    const isCourtScoring = isCourt || courtByConsecutive;
-
-    if (isCourtScoring) {
-      this.scores[winningTeam]++;
-      this.consecutiveWins = { A: 0, B: 0 };
-    }
-
-    // Check for game over (e.g., first to 7 courts, or some agreed number — using 7)
+    // Check for game over (first to 7)
     const gameOver = this.scores[winningTeam] >= 7;
 
     // Determine new dealer before updating state
@@ -356,9 +345,9 @@ class RungGame {
     let newDealerSeatIndex;
 
     if (winningTeam !== trumpCallerTeam) {
-      // Dealer's team won (trump-caller's team lost): dealer moves to dealer's right
+      // Defending team won: dealer moves to dealer's right (to the caller)
       newDealerSeatIndex = (this.dealerSeatIndex + 3) % 4;
-    } else if (isCourtScoring && winningTeam === trumpCallerTeam) {
+    } else if (isCourt && winningTeam === trumpCallerTeam) {
       // Trump caller's team scored a court: deal passes to dealer's partner
       newDealerSeatIndex = (this.dealerSeatIndex + 2) % 4;
     } else {
@@ -369,7 +358,7 @@ class RungGame {
     this.lastHandResult = {
       winningTeam,
       tricks,
-      isCourt: isCourtScoring,
+      isCourt,
       newDealerSeatIndex,
       scores: { ...this.scores }
     };
